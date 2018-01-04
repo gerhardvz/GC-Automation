@@ -239,6 +239,9 @@ Logo
 
 <div id="Channels" class="pagecontent"  hidden>
 <form action="/" method="POST">
+  <!-- used to identify which form is sent over by POST -->
+  <p name="Channels" hidden>yes</p>
+
 <!-- List Channels and values   -->
 <table style="width:100%" border="1" class="channelTable">
 <tr>
@@ -366,6 +369,10 @@ Logo
 <div id="ChannelSettings" class="pagecontent" hidden>
   <form action="/" method="POST">
   <!-- List Channels and values   -->
+
+  <!-- used to identify which form is sent over by POST -->
+  <p name="ChannelSettings" hidden>yes</p>
+
   <table style="width:100%" border="1" class="channelTable">
   <tr>
     <th>Channel</th>
