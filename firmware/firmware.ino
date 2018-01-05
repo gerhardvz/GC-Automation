@@ -1,5 +1,7 @@
-#include <ESP8266mDNS.h>
+#include <NTPClient.h>
 
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -7,28 +9,11 @@
 
 #define CONFIG_START 32
 
-enum Channels{
-Channel1 =  4,
-Channel2 =  5,
-Channel3 = 13,
-Channel4 = 12
-};
+static  int const CHANNEL_PIN[4]={4,5,13,12};
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
 
 
-//Channel Settings
-// String channelNames[4];
-// int   channelTimers[4]; //timer in sec
-// string channelTime[4];
-// //Wifi Settings
-//  String wifiMode="AP";
-//  char apssid[]="GC-Automation";
-//  String apSecurity="WPA";
-//  char apPassword[]="default";
-//
-// //Client WifiSettings
-// char clientssid[]="";
-// String clientSecurity="";
-// char clientPassword[]="";
 ESP8266WebServer server(80);
 struct config_t
 {
@@ -37,21 +22,21 @@ struct config_t
   String channelTime[4];
   //Wifi Settings
    String wifiMode;
-   char apssid[];
+   char apssid[50];
    String apSecurity;
-   char apPassword[];
+   char apPassword[100];
 
   //Client WifiSettings
-  char clientssid[];
+  char clientssid[50];
   String clientSecurity;
-  char clientPassword[];
+  char clientPassword[100];
 }config={
   {"Channel 1","Channel 2","Channel 3","Channel 4"},
   {5,5,5,5},
   {"","","",""},
-  "AP",
-  {'G','C','-','A','u','t','o','m','a','t','i','o','n'}
-  'WPA2',
+  "ap",
+  {'G','C','-','A','u','t','o','m','a','t','i','o','n'},
+  "WPA2",
   {'G','C','-','A','u','t','o','m','a','t','i','o','n'},
   {},
   "",
@@ -62,15 +47,20 @@ struct config_t
 void setup() {
 
   Serial.begin(115200);
- loadConf();
+  delay(5000);
+  Serial.println("Started");
+ //loadConf();
+// SaveConf();
  startWifi();
+ Serial.println("Starting Server");
  server.begin();
- setupMDNS();
- timeClient.update();
+// setupMDNS();
+// timeClient.update();
 }
 
 void loop() {
   timeClient.update();
+  timerCheck();
   server.handleClient();
   //timer check
 }
@@ -94,7 +84,7 @@ void DefaultValues(){
 
 
  //Wifi Settings
- config.wifiMode="AP";
+ config.wifiMode="ap";
 // ssid="GC-Automation";
  strcpy(config.clientssid,"");
  config.clientSecurity="";
@@ -110,11 +100,14 @@ strcpy(config.apPassword,"GC-Automation");
 }
 
 void SaveConf(){
-  for (unsigned int t=0; t<sizeof(settings); t++)
+  if(sizeof(config)>EEPROM.length()){
+    Serial.println("EEPROM Size to small");
+  }
+  for (unsigned int t=0; t<sizeof(config); t++)
    { // writes to EEPROM
-     EEPROM.write(CONFIG_START + t, *((char*)&settings + t));
+     EEPROM.write(CONFIG_START + t, *((char*)&config + t));
      // and verifies the data
-     if (EEPROM.read(CONFIG_START + t) != *((char*)&settings + t))
+     if (EEPROM.read(CONFIG_START + t) != *((char*)&config + t))
      {
        Serial.println("Error writing to memory.");
      }
@@ -122,32 +115,67 @@ void SaveConf(){
 }
 
 void loadConf(){
-  for (unsigned int t=0; t<sizeof(settings); t++)
-       *((char*)&settings + t) = EEPROM.read(CONFIG_START + t);
+  for (unsigned int t=0; t<sizeof(config); t++)
+       *((char*)&config + t) = EEPROM.read(CONFIG_START + t);
 }
 void startWifi(){
-   byte ledStatus = LOW;
+  
+   
   Serial.println();
-  // Serial.println("Connecting to: " + String(ssid));
+//   Serial.println("Connecting to: " + String(ssid));
   // Set WiFi mode to station (as opposed to AP or AP_STA)
-  WiFi.mode(WIFI_STA);
-
+  if(config.wifiMode=="ap"){
+  WiFi.mode(WIFI_AP);
+WiFi.disconnect();
+Serial.println("AP:"+String( config.apssid));
   // WiFI.begin([ssid], [passkey]) initiates a WiFI connection
   // to the stated [ssid], using the [passkey] as a WPA, WPA2,
   // or WEP passphrase.
-  WiFi.begin(config.apssid, config.apPassword);
+  WiFi.softAP(config.apssid, config.apPassword);
+  }
+  else if(config.wifiMode=="client"){
+     WiFi.mode(WIFI_STA);
+WiFi.disconnect();
+Serial.println("Connecting to:"+ String(config.clientssid));
+  // WiFI.begin([ssid], [passkey]) initiates a WiFI connection
+  // to the stated [ssid], using the [passkey] as a WPA, WPA2,
+  // or WEP passphrase.
+  WiFi.begin(config.clientssid, config.clientPassword);
 
-  // Use the WiFi.status() function to check if the ESP8266
-  // is connected to a WiFi network.
   while (WiFi.status() != WL_CONNECTED)
   {
-
+Serial.print(".");
     delay(100);
     // Potentially infinite loops are generally dangerous.
     // Add delays -- allowing the processor to perform other
     // tasks -- wherever possible.
   }
+  Serial.println();
   Serial.println("WiFi connected");
+  
+  }
+  else{
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.disconnect();
+    Serial.println("Connecting to:"+ String(config.clientssid));
+Serial.println("AP:"+String( config.apssid));
+    WiFi.begin(config.clientssid, config.clientPassword);
+     WiFi.softAP(config.apssid, config.apPassword);
+
+     while (WiFi.status() != WL_CONNECTED)
+  {
+Serial.print(".");
+    delay(100);
+    // Potentially infinite loops are generally dangerous.
+    // Add delays -- allowing the processor to perform other
+    // tasks -- wherever possible.
+  }
+  Serial.println();
+  Serial.println("WiFi connected");
+  }
+  // Use the WiFi.status() function to check if the ESP8266
+  // is connected to a WiFi network.
+  
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 }
@@ -177,18 +205,21 @@ void handleRoot()
   if (server.hasArg("wifiType")) {
     String sWifiType = server.arg("wifiType");
     if (sWifiType="ap"){
+      config.wifiMode=sWifiType;
       strcpy(config.apssid,server.arg("apssid").c_str());
       config.apSecurity=server.arg("apSecurity");
      strcpy(config.apPassword,server.arg("apPassword").c_str());
 
     }
     else if(sWifiType="client"){
+      config.wifiMode=sWifiType;
       strcpy(config.clientssid,server.arg("clientssid").c_str());
       config.clientSecurity=server.arg("clientSecurity");
      strcpy(config.clientPassword,server.arg("clientPassword").c_str());
     }
     else if(sWifiType="apClient"){
       //client Settings
+      config.wifiMode=sWifiType;
       strcpy(config.clientssid,server.arg("clientssid").c_str());
       config.clientSecurity=server.arg("clientSecurity");
      strcpy(config.clientPassword,server.arg("clientPassword").c_str());
@@ -199,6 +230,7 @@ void handleRoot()
     }
     //restart device
     SaveConf();
+    startWifi();
   }
   else if (server.hasArg("Channels")) {
     for(int i=1;i<5;i++){
@@ -324,7 +356,7 @@ void startTimer(int channel){
     int timerMin=(config.channelTimers[channel-1]/60)%60;
     int timerHours=(config.channelTimers[channel-1]/60)/60;
 
-    config.channelTime[channel-1]=(timeClient.getHours+timerHours)+":"+(timeClient.getMinutes+timerMin)+":"+(timeClient.getSeconds+timerSec);//getTime+config.channelTimers
+    config.channelTime[channel-1]=String(timeClient.getHours()+timerHours)+":"+String(timeClient.getMinutes()+timerMin)+":"+String(timeClient.getSeconds()+timerSec);//getTime+config.channelTimers
   }
 }
 
@@ -333,3 +365,20 @@ void stopTimer(int channel){
     config.channelTime[channel-1]="";
   }
 }
+void timerCheck(){
+for(int i=0;i<4;i++){
+  if(config.channelTime[i-1]!=""){
+    int timerSec=config.channelTime[i-1].substring(0, 3).toInt();
+    int timerMin=config.channelTime[i-1].substring(4, 6).toInt();
+    int timerHour=config.channelTime[i-1].substring(7).toInt();
+    if(timerSec<=timeClient.getSeconds()&&timerMin<=timeClient.getMinutes()&&timerHour<=timeClient.getHours()){
+     digitalWrite(CHANNEL_PIN[i],LOW);
+    }
+    else{
+     digitalWrite(CHANNEL_PIN[i],HIGH); 
+    }
+  }
+}
+  
+}
+
